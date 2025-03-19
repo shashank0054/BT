@@ -1,76 +1,44 @@
 import pandas as pd
 import json
 
-# Define input and output file names
-file_path = "goldenset.xlsx"
-output_top_level = "top_level_data.json"
-output_nested = "nested_data.json"
-output_merged = "merged_data.json"
+# Function to extract data from Excel and convert it to JSON
+def extract_json_from_excel(file_path, output_path="output.json"):
+    # Load the Excel file with the first two rows as headers
+    df = pd.read_excel(file_path, sheet_name=0, header=[0, 1])
 
-# Step 1: Extract Top-Level Fields
-def extract_top_level():
-    df = pd.read_excel(file_path, sheet_name="Sheet1", skiprows=2)
-    df.columns = pd.read_excel(file_path, sheet_name="Sheet1", nrows=1).iloc[0].fillna("").str.lower().str.replace(" ", "_")
+    # Extract top-level fields from row 0 (first row)
+    top_level_columns = [col[0] for col in df.columns if col[0] not in ["this_period", "ytd_period"]]
 
-    top_level_fields = [col for col in df.columns if "this_period" not in col and "ytd_period" not in col]
-
-    json_data = df[top_level_fields].dropna(how="all").apply(lambda row: row.dropna().astype(str).to_dict(), axis=1).tolist()
-
-    with open(output_top_level, "w") as json_file:
-        json.dump(json_data, json_file, indent=4)
-    
-    print(f"✅ Top-level data saved as '{output_top_level}'")
-
-# Step 2: Extract Nested Fields
-def extract_nested():
-    df = pd.read_excel(file_path, sheet_name="Sheet1", header=[0, 1], skiprows=1)
-    
-    df.columns = pd.MultiIndex.from_tuples([
-        (str(col[0]).strip().lower().replace(" ", "_"), 
-         str(col[1]).strip().lower().replace(" ", "_") if isinstance(col[1], str) else "")
-        for col in df.columns
-    ])
-
+    # Extract nested fields from row 1 (second row)
     nested_columns = {
         "this_period": [col for col in df.columns if col[0] == "this_period" and col[1]],
         "ytd_period": [col for col in df.columns if col[0] == "ytd_period" and col[1]],
     }
 
+    # Convert top-level fields to JSON format
+    top_level_json = df[top_level_columns].dropna(how="all").apply(lambda row: row.dropna().astype(str).to_dict(), axis=1).tolist()
+
+    # Convert nested fields to JSON format
     def row_to_json(row):
         return {
             section: {field[1]: str(row[field]) for field in cols if pd.notna(row[field])}
             for section, cols in nested_columns.items()
         }
 
-    json_data = df.apply(row_to_json, axis=1).tolist()
+    nested_json = df.apply(row_to_json, axis=1).tolist()
 
-    with open(output_nested, "w") as json_file:
-        json.dump(json_data, json_file, indent=4)
+    # Merge both JSON structures
+    final_json = [{**top, **nested} for top, nested in zip(top_level_json, nested_json)]
 
-    print(f"✅ Nested data saved as '{output_nested}'")
+    # Save the JSON to a file
+    with open(output_path, "w") as json_file:
+        json.dump(final_json, json_file, indent=4)
 
-# Step 3: Merge JSON Files
-def merge_json():
-    with open(output_top_level, "r") as top_file:
-        top_level_data = json.load(top_file)
+    print(f"✅ JSON extracted and saved as '{output_path}'")
+    return output_path
 
-    with open(output_nested, "r") as nested_file:
-        nested_data = json.load(nested_file)
-
-    if len(top_level_data) != len(nested_data):
-        raise ValueError("Mismatch in record count between top-level and nested data.")
-
-    merged_data = [{**top, **nested} for top, nested in zip(top_level_data, nested_data)]
-
-    with open(output_merged, "w") as output_file:
-        json.dump(merged_data, output_file, indent=4)
-
-    print(f"✅ Merged JSON saved as '{output_merged}'")
-
-# Run all steps in sequence
+# Example usage
 if __name__ == "__main__":
-    print("🔄 Processing Excel file...")
-    extract_top_level()
-    extract_nested()
-    merge_json()
-    print("🎉 All steps completed successfully!")
+    input_excel = "goldenset.xlsx"  # Replace with your actual file
+    output_json = "extracted_data.json"
+    extract_json_from_excel(input_excel, output_json)
